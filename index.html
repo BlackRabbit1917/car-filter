@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Фильтр автообъявлений</title>
+<style>
+/* Layout: одна колонка — критерии, форма ввода, вердикт, сравнение. Техпаспорт/диагностическая карта. */
+/* Шрифты системные: файл должен открываться без интернета. */
+:root{
+  --bg:#EEF0F2; --surface:#FFFFFF; --surface-2:#F7F8F9;
+  --fg:#15181C; --muted:#5B636C; --border:#D4D9DE;
+  --accent:#C2551C; --accent-soft:#F6E7DE;
+  --ok:#1C7A4E; --ok-soft:#E2F1E9;
+  --warn:#9A6B10; --warn-soft:#F8EEDA;
+  --bad:#AF2A20; --bad-soft:#F9E3E1;
+  --body:"Segoe UI Variable Text","Segoe UI",-apple-system,BlinkMacSystemFont,Roboto,"Helvetica Neue",Arial,sans-serif;
+  --display:"Segoe UI Variable Display","Segoe UI Semibold","Segoe UI",-apple-system,BlinkMacSystemFont,Roboto,Arial,sans-serif;
+  --mono:"Cascadia Mono",Consolas,ui-monospace,SFMono-Regular,"Liberation Mono",monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#14171A; --surface:#1B1F24; --surface-2:#22272D;
+  --fg:#E7EAED; --muted:#99A2AB; --border:#2F363E;
+  --accent:#E8793A; --accent-soft:#39251A;
+  --ok:#4FB383; --ok-soft:#142A20;
+  --warn:#D9A748; --warn-soft:#2C2314;
+  --bad:#E8645A; --bad-soft:#2E1816;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#14171A; --surface:#1B1F24; --surface-2:#22272D;
+  --fg:#E7EAED; --muted:#99A2AB; --border:#2F363E;
+  --accent:#E8793A; --accent-soft:#39251A;
+  --ok:#4FB383; --ok-soft:#142A20;
+  --warn:#D9A748; --warn-soft:#2C2314;
+  --bad:#E8645A; --bad-soft:#2E1816;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+img{max-width:100%}
+[hidden]{display:none !important}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.5}
+.wrap{max-width:860px;margin:0 auto;padding-inline:16px;padding-block:28px 64px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;letter-spacing:-0.01em}
+h1{font-size:clamp(26px,5vw,36px);line-height:1.1}
+h2{font-size:19px;margin-bottom:12px}
+.sub{color:var(--muted);font-size:14px;margin:8px 0 0;max-width:62ch}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px;margin-top:20px}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(168px,1fr))}
+label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:500}
+input[type=number],input[type=text],select{width:100%;min-width:0;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface-2);color:var(--fg);font-family:var(--body);font-size:14px}
+input[type=number]{font-family:var(--mono);font-variant-numeric:tabular-nums}
+input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--fg);margin:0;cursor:pointer}
+.check input{accent-color:var(--accent);width:16px;height:16px;flex:none}
+.checks{display:grid;gap:9px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));margin-top:4px}
+button{font-family:var(--body);font-size:14px;font-weight:500;padding:9px 16px;border-radius:6px;border:1px solid var(--border);background:var(--surface-2);color:var(--fg);cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button:hover{opacity:.9}
+details>summary{cursor:pointer;font-family:var(--display);font-size:17px;list-style:none}
+details>summary::-webkit-details-marker{display:none}
+details>summary::before{content:"\25B8";display:inline-block;width:1.1em;color:var(--accent);transition:transform .15s}
+details[open]>summary::before{transform:rotate(90deg)}
+@media (prefers-reduced-motion:reduce){details>summary::before{transition:none}}
+.verdict{border-radius:10px;border:1px solid;padding:18px;margin-top:20px}
+.verdict.go{background:var(--ok-soft);border-color:var(--ok)}
+.verdict.care{background:var(--warn-soft);border-color:var(--warn)}
+.verdict.stop{background:var(--bad-soft);border-color:var(--bad)}
+.vtitle{font-family:var(--display);font-size:26px;line-height:1.1}
+.verdict.go .vtitle{color:var(--ok)}
+.verdict.care .vtitle{color:var(--warn)}
+.verdict.stop .vtitle{color:var(--bad)}
+.vnote{font-size:13px;color:var(--muted);margin-top:4px}
+ul.flags{list-style:none;padding:0;margin:14px 0 0;display:grid;gap:7px}
+ul.flags li{display:flex;gap:9px;font-size:14px;align-items:flex-start}
+.tag{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.05em;padding:2px 6px;border-radius:4px;flex:none;margin-top:2px;text-transform:uppercase}
+.tag.bad{background:var(--bad);color:#fff}
+.tag.warn{background:var(--warn);color:#fff}
+.tag.ok{background:var(--ok);color:#fff}
+.money{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(126px,1fr));margin-top:16px;border-top:1px solid var(--border);padding-top:14px}
+.m-item .m-label{font-size:11px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em}
+.m-item .m-val{font-family:var(--mono);font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px}
+.m-item .m-val.over{color:var(--bad)}
+.m-item .m-val.fits{color:var(--ok)}
+.m-item .m-sub{font-size:11px;color:var(--muted);margin-top:1px}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;align-items:center}
+.tablewrap{overflow-x:auto;margin-top:12px}
+table{border-collapse:collapse;width:100%;font-size:13px;min-width:560px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+th{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:500}
+td.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:baseline}
+.dot.go{background:var(--ok)}.dot.care{background:var(--warn)}.dot.stop{background:var(--bad)}
+.empty{color:var(--muted);font-size:14px;padding:18px 0;text-align:center}
+.hint{font-size:12px;color:var(--muted);margin-top:10px}
+.pill{display:inline-block;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent)}
+.del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:2px 6px;line-height:1}
+.del:hover{color:var(--bad)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Фильтр автообъявлений</h1>
+    <p class="sub">Вносите данные из объявления — инструмент считает платёж и проверяет машину по вашим критериям. Работает без интернета: откройте файл двойным кликом.</p>
+  </header>
+
+  <details class="card" id="settingsBox">
+    <summary>Критерии и фильтры</summary>
+    <div style="margin-top:16px">
+      <div class="eyebrow">Деньги</div>
+      <div class="grid">
+        <div><label for="s_down">Взнос, ₽</label><input type="number" id="s_down" value="500000" step="10000"></div>
+        <div><label for="s_limit">Потолок платежа, ₽/мес</label><input type="number" id="s_limit" value="30000" step="1000"></div>
+        <div><label for="s_term">Срок кредита, мес</label><input type="number" id="s_term" value="60" step="12"></div>
+        <div><label for="s_rateAuto">Ставка автокредита, %</label><input type="number" id="s_rateAuto" value="18" step="0.5"></div>
+        <div><label for="s_rateCash">Ставка потребкредита, %</label><input type="number" id="s_rateCash" value="28" step="0.5"></div>
+      </div>
+      <div class="eyebrow" style="margin-top:18px">Эксплуатация</div>
+      <div class="grid">
+        <div><label for="s_km">Пробег в год, км</label><input type="number" id="s_km" value="24000" step="1000"></div>
+        <div><label for="s_fuel">Цена топлива, ₽/л</label><input type="number" id="s_fuel" value="60" step="1"></div>
+        <div><label for="s_tax">Налог, ₽ за л.с.</label><input type="number" id="s_tax" value="45" step="5"></div>
+        <div><label for="s_clear">Минимальный клиренс, мм</label><input type="number" id="s_clear" value="170" step="5"></div>
+      </div>
+      <div class="eyebrow" style="margin-top:18px">Стоп-факторы — снимите галочку, если готовы на компромисс</div>
+      <div class="checks">
+        <label class="check"><input type="checkbox" id="f_rhd" checked> Правый руль</label>
+        <label class="check"><input type="checkbox" id="f_cvt" checked> Вариатор</label>
+        <label class="check"><input type="checkbox" id="f_dct" checked> Робот DSG / DCT</label>
+        <label class="check"><input type="checkbox" id="f_diesel" checked> Дизель</label>
+        <label class="check"><input type="checkbox" id="f_turbo" checked> Турбобензин</label>
+        <label class="check"><input type="checkbox" id="f_fwd" checked> Передний привод</label>
+        <label class="check"><input type="checkbox" id="f_sunroof" checked> Люк / панорама</label>
+        <label class="check"><input type="checkbox" id="f_r19" checked> Диски R19+</label>
+        <label class="check"><input type="checkbox" id="f_repaired" checked> Оценка R / RA</label>
+        <label class="check"><input type="checkbox" id="f_budget" checked> Платёж выше потолка</label>
+      </div>
+      <p class="hint">Настройки сохраняются в этом браузере.</p>
+    </div>
+  </details>
+
+  <section class="card">
+    <div class="eyebrow">Данные из объявления <span class="pill" id="sampleTag">пример заполнен</span></div>
+    <div class="grid">
+      <div style="grid-column:1/-1"><label for="c_name">Марка и модель</label><input type="text" id="c_name" value="Toyota RAV4 Hybrid"></div>
+      <div><label for="c_year">Год</label><input type="number" id="c_year" value="2021"></div>
+      <div><label for="c_km">Пробег, км</label><input type="number" id="c_km" value="70000" step="1000"></div>
+      <div><label for="c_price">Цена, ₽</label><input type="number" id="c_price" value="2150000" step="10000"></div>
+      <div><label for="c_ship">Доставка, ₽</label><input type="number" id="c_ship" value="0" step="10000"></div>
+      <div><label for="c_engine">Двигатель</label>
+        <select id="c_engine">
+          <option value="atmo">Бензин атмосферный</option>
+          <option value="turbo">Бензин турбо</option>
+          <option value="diesel">Дизель</option>
+          <option value="hev" selected>Гибрид HEV — планетарный e-CVT</option>
+          <option value="hevdct">Гибрид HEV — через робот DCT</option>
+          <option value="mhev">Мягкий гибрид 48V</option>
+          <option value="phev">Плагин-гибрид / электро</option>
+        </select>
+      </div>
+      <div><label for="c_gear">Коробка</label>
+        <select id="c_gear">
+          <option value="at">Классический автомат</option>
+          <option value="ecvt" selected>Планетарный e-CVT</option>
+          <option value="cvt">Вариатор CVT</option>
+          <option value="dct">Робот DSG / DCT</option>
+          <option value="mt">Механика</option>
+        </select>
+      </div>
+      <div><label for="c_drive">Привод</label>
+        <select id="c_drive"><option value="awd" selected>Полный</option><option value="fwd">Передний</option></select>
+      </div>
+      <div><label for="c_hand">Руль</label>
+        <select id="c_hand"><option value="lhd" selected>Левый</option><option value="rhd">Правый</option></select>
+      </div>
+      <div><label for="c_hp">Мощность, л.с.</label><input type="number" id="c_hp" value="222"></div>
+      <div><label for="c_cons">Расход, л/100 км</label><input type="number" id="c_cons" value="6.3" step="0.1"></div>
+      <div><label for="c_clear">Клиренс, мм</label><input type="number" id="c_clear" value="195" step="5"></div>
+      <div><label for="c_wheels">Диски</label>
+        <select id="c_wheels"><option value="small" selected>R18 и меньше</option><option value="big">R19 и больше</option></select>
+      </div>
+      <div><label for="c_where">Где машина</label>
+        <select id="c_where">
+          <option value="ru" selected>Россия, с ПТС</option>
+          <option value="jp">Ввоз — Япония</option>
+          <option value="kr">Ввоз — Корея</option>
+          <option value="cn">Ввоз — Китай</option>
+          <option value="eu">Ввоз — Европа / Грузия</option>
+        </select>
+      </div>
+      <div><label for="c_grade">Оценка аукциона</label>
+        <select id="c_grade">
+          <option value="">не указана</option>
+          <option value="S">S — новая</option>
+          <option value="5">5</option>
+          <option value="4.5">4.5</option>
+          <option value="4">4</option>
+          <option value="3.5">3.5</option>
+          <option value="3">3</option>
+          <option value="R">R — восстановлена</option>
+          <option value="RA">RA — восстановлена</option>
+        </select>
+      </div>
+      <div><label for="c_winter">Зимний пакет</label>
+        <select id="c_winter"><option value="yes" selected>Есть</option><option value="no">Нет</option><option value="unknown">Неизвестно</option></select>
+      </div>
+      <div><label for="c_sunroof">Люк / панорама</label>
+        <select id="c_sunroof"><option value="no" selected>Нет</option><option value="yes">Есть</option></select>
+      </div>
+      <div><label for="c_cheap">Цена ниже рынка на 30%+</label>
+        <select id="c_cheap"><option value="no" selected>Нет</option><option value="yes">Да</option></select>
+      </div>
+    </div>
+    <div class="row">
+      <button class="primary" id="saveBtn">Сохранить для сравнения</button>
+      <button id="clearBtn">Очистить форму</button>
+    </div>
+  </section>
+
+  <div id="verdict"></div>
+
+  <section class="card">
+    <h2>Сохранённые машины</h2>
+    <div id="savedArea"><p class="empty">Пока ничего не сохранено.</p></div>
+    <div class="row">
+      <button id="exportBtn">Выгрузить в файл</button>
+      <button id="importBtn">Загрузить из файла</button>
+      <input type="file" id="importFile" accept=".json,application/json" hidden>
+      <button id="resetBtn">Вернуть разобранные машины</button>
+    </div>
+    <p class="hint" id="storeNote">Список хранится в этом браузере. Чтобы перенести на другое устройство — выгрузите в файл и загрузите там.</p>
+  </section>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var rub = new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0});
+  function fmt(n){ return rub.format(Math.round(n||0)) + ' ₽'; }
+  function $(id){ return document.getElementById(id); }
+  function num(id){ var v = parseFloat($(id).value); return isNaN(v) ? 0 : v; }
+
+  var SETTINGS = ['s_down','s_limit','s_term','s_rateAuto','s_rateCash','s_km','s_fuel','s_tax','s_clear'];
+  var FLAGS = ['f_rhd','f_cvt','f_dct','f_diesel','f_turbo','f_fwd','f_sunroof','f_r19','f_repaired','f_budget'];
+  var FORM = ['c_name','c_year','c_km','c_price','c_ship','c_engine','c_gear','c_drive','c_hand','c_hp','c_cons','c_clear','c_wheels','c_where','c_grade','c_winter','c_sunroof','c_cheap'];
+
+  // Машины, разобранные в переписке: имя, год, пробег, итоговая цена, платёж, расходы в год, вердикт
+  var SEED = [];
+  function seedCars(){
+    return SEED.map(function(r,i){
+      return {id:'c'+(i+1), name:r[0], year:r[1], km:r[2], total:r[3], pay:r[4], yearly:r[5], level:r[6]};
+    });
+  }
+
+  function annuity(sum, ratePct, months){
+    if (sum <= 0) return 0;
+    var r = ratePct/12/100;
+    if (r <= 0) return sum/months;
+    return sum * r / (1 - Math.pow(1+r, -months));
+  }
+
+  function readCar(){
+    var c = {};
+    FORM.forEach(function(id){ var el=$(id); c[id.slice(2)] = el.type==='number' ? num(id) : el.value; });
+    return c;
+  }
+
+  function analyze(c){
+    var stop=[], warn=[], good=[];
+    var on = {}; FLAGS.forEach(function(f){ on[f.slice(2)] = $(f).checked; });
+
+    var total = c.price + c.ship;
+    var down = num('s_down'), term = num('s_term') || 60;
+    var imported = c.where !== 'ru';
+    var rate = imported ? num('s_rateCash') : num('s_rateAuto');
+    var loan = Math.max(0, total - down);
+    var pay = annuity(loan, rate, term);
+    var limit = num('s_limit');
+    var fuelYear = c.cons * num('s_km') / 100 * num('s_fuel');
+    var taxYear = c.hp * num('s_tax');
+
+    if (c.hand === 'rhd' && on.rhd) stop.push('Правый руль');
+    if (c.gear === 'cvt' && on.cvt) stop.push('Вариатор CVT — ресурс и дорогой ремонт');
+    if (c.gear === 'dct' && on.dct) stop.push('Робот DSG / DCT — сцепления и мехатроник');
+    if (c.engine === 'diesel' && on.diesel) stop.push('Дизель — сажевый фильтр, AdBlue, датчики NOx');
+    if (c.engine === 'turbo' && on.turbo) stop.push('Турбобензин — турбина и нагар, против «сел и забыл»');
+    if (c.engine === 'hevdct' && on.dct) stop.push('Гибрид через робот DCT — все болячки робота остаются');
+    if (c.engine === 'mhev') warn.push('Мягкий гибрид 48V — сложность без преимуществ полного гибрида');
+    if (c.engine === 'phev') warn.push('Плагин-гибрид или электро — при −35 батарея теряет 30–40% ёмкости, зарядная сеть за городом редкая');
+    if (c.drive === 'fwd' && on.fwd) stop.push('Передний привод');
+    if (c.sunroof === 'yes' && on.sunroof) stop.push('Люк или панорама — забитые дренажи и течи');
+    if (c.wheels === 'big' && on.r19) stop.push('Диски R19+ — гнутся на загородных дорогах, дорогие шины');
+    if ((c.grade === 'R' || c.grade === 'RA') && on.repaired) stop.push('Оценка ' + c.grade + ' — восстановлена после аварии');
+    if (pay > limit && on.budget) stop.push('Платёж ' + fmt(pay) + ' выше потолка ' + fmt(limit));
+
+    if (imported) warn.push('Ввозная машина: нет ПТС до растаможки, автокредит недоступен — расчёт по ставке потребкредита ' + rate + '%');
+    if (imported && c.grade === '') warn.push('Оценка аукциона не указана — запросите лот и отчёт по VIN до любой предоплаты');
+    if (c.cheap === 'yes') warn.push('Цена заметно ниже рынка — проверьте по аукционным базам: салвэйдж, утопленник или скрученный пробег');
+    if (c.clear > 0 && c.clear < num('s_clear')) warn.push('Клиренс ' + c.clear + ' мм ниже порога ' + num('s_clear') + ' мм');
+    if (c.km > 120000) warn.push('Пробег ' + rub.format(c.km) + ' км — впереди возрастные вложения');
+    var age = new Date().getFullYear() - c.year;
+    if (c.year && age > 10) warn.push('Возраст ' + age + ' лет');
+    if (c.winter === 'no') warn.push('Нет зимнего пакета — для сибирской зимы это обогрев лобового, руля и задних сидений');
+    if (c.winter === 'unknown') warn.push('Зимний пакет не подтверждён — уточните обогрев лобового и руля');
+    if (c.hp > 0 && c.hp < 130) warn.push('Мощность ' + c.hp + ' л.с. — мало для обгонов на трассе при 70% загородных поездок');
+    if (c.grade === '3' || c.grade === '3.5') warn.push('Оценка ' + c.grade + ' — заметные дефекты кузова или салона');
+
+    if (c.gear === 'at') good.push('Классический гидротрансформаторный автомат');
+    if (c.gear === 'ecvt') good.push('Планетарный e-CVT — нет сцеплений и переключений, ломаться нечему');
+    if (c.engine === 'atmo') good.push('Атмосферный бензиновый мотор');
+    if (c.engine === 'hev') good.push('Полный самозаряжающийся гибрид');
+    if (c.drive === 'awd') good.push('Полный привод');
+    if (c.hand === 'lhd') good.push('Левый руль');
+    if (c.clear >= num('s_clear')) good.push('Клиренс ' + c.clear + ' мм');
+    if (!imported) good.push('Машина в России с ПТС — доступны автокредит, КАСКО и проверка по базам');
+    if (c.winter === 'yes') good.push('Зимний пакет есть');
+    if (c.km > 0 && c.km < 80000) good.push('Пробег ' + rub.format(c.km) + ' км');
+    if (c.grade === '4' || c.grade === '4.5' || c.grade === '5' || c.grade === 'S') good.push('Оценка аукциона ' + c.grade);
+    if (pay <= limit && pay > 0) good.push('Платёж укладывается в потолок');
+
+    var level = stop.length ? 'stop' : (warn.length ? 'care' : 'go');
+    return {stop:stop, warn:warn, good:good, level:level, total:total, loan:loan, pay:pay,
+            rate:rate, limit:limit, fuelYear:fuelYear, taxYear:taxYear, imported:imported};
+  }
+
+  function render(){
+    var c = readCar(), a = analyze(c);
+    var titles = {stop:'Не брать', care:'Можно, но с оговорками', go:'Подходит'};
+    var notes = {
+      stop:'Нарушены критерии из вашего списка — ниже что именно.',
+      care:'Стоп-факторов нет, но есть вопросы, которые надо закрыть до предоплаты.',
+      go:'Машина проходит по всем заданным критериям.'
+    };
+    var html = '<div class="verdict ' + a.level + '">' +
+      '<div class="vtitle">' + titles[a.level] + '</div>' +
+      '<div class="vnote">' + notes[a.level] + '</div>';
+
+    if (a.stop.length || a.warn.length || a.good.length){
+      html += '<ul class="flags">';
+      a.stop.forEach(function(t){ html += '<li><span class="tag bad">стоп</span><span>' + esc(t) + '</span></li>'; });
+      a.warn.forEach(function(t){ html += '<li><span class="tag warn">вопрос</span><span>' + esc(t) + '</span></li>'; });
+      a.good.forEach(function(t){ html += '<li><span class="tag ok">плюс</span><span>' + esc(t) + '</span></li>'; });
+      html += '</ul>';
+    }
+
+    var fits = a.pay <= a.limit && a.pay > 0;
+    html += '<div class="money">' +
+      mItem('Цена итого', fmt(a.total), c.ship ? 'с доставкой' : 'без доставки') +
+      mItem('Кредит', fmt(a.loan), 'ставка ' + a.rate + '%') +
+      mItem('Платёж/мес', fmt(a.pay), null, fits ? 'fits' : 'over') +
+      mItem('Топливо/год', fmt(a.fuelYear), c.cons + ' л · ' + rub.format(num('s_km')) + ' км') +
+      mItem('Налог/год', fmt(a.taxYear), c.hp + ' л.с.') +
+      mItem('Расходы/год', fmt(a.fuelYear + a.taxYear), 'топливо и налог') +
+      '</div></div>';
+    $('verdict').innerHTML = html;
+  }
+
+  function mItem(label, val, sub, cls){
+    return '<div class="m-item"><div class="m-label">' + label + '</div>' +
+      '<div class="m-val' + (cls ? ' ' + cls : '') + '">' + val + '</div>' +
+      (sub ? '<div class="m-sub">' + esc(sub) + '</div>' : '') + '</div>';
+  }
+  function esc(s){ return String(s).replace(/[&<>"]/g, function(ch){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]; }); }
+
+  var cars = [];
+  function lsGet(k, d){ try { var v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch(e){ return d; } }
+  function lsSet(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
+
+  function renderSaved(){
+    var area = $('savedArea');
+    if (!cars.length){ area.innerHTML = '<p class="empty">Пока ничего не сохранено.</p>'; return; }
+    var h = '<div class="tablewrap"><table><thead><tr><th>Машина</th><th>Год</th><th>Пробег</th><th>Цена</th><th>Платёж</th><th>Расходы/год</th><th></th></tr></thead><tbody>';
+    cars.slice().sort(function(a,b){ return (a.pay||0)-(b.pay||0); }).forEach(function(r){
+      h += '<tr><td><span class="dot ' + r.level + '"></span>' + esc(r.name || '—') + '</td>' +
+        '<td class="num">' + (r.year||'') + '</td>' +
+        '<td class="num">' + rub.format(r.km||0) + '</td>' +
+        '<td class="num">' + fmt(r.total) + '</td>' +
+        '<td class="num">' + fmt(r.pay) + '</td>' +
+        '<td class="num">' + fmt(r.yearly) + '</td>' +
+        '<td><button class="del" data-id="' + esc(r.id) + '" title="Удалить">×</button></td></tr>';
+    });
+    h += '</tbody></table></div>';
+    area.innerHTML = h;
+    Array.prototype.forEach.call(area.querySelectorAll('.del'), function(b){
+      b.addEventListener('click', function(){ removeCar(b.getAttribute('data-id')); });
+    });
+  }
+
+  function persist(){ lsSet('cars', cars); }
+
+  function saveCar(){
+    var c = readCar(), a = analyze(c);
+    cars.push({id:String(Date.now()), name:c.name, year:c.year, km:c.km, total:a.total,
+               pay:Math.round(a.pay), yearly:Math.round(a.fuelYear + a.taxYear), level:a.level});
+    persist(); renderSaved();
+  }
+  function removeCar(id){
+    cars = cars.filter(function(r){ return r.id !== id; });
+    persist(); renderSaved();
+  }
+
+  SETTINGS.forEach(function(id){ var v = lsGet(id, null); if (v !== null) $(id).value = v;
+    $(id).addEventListener('input', function(){ lsSet(id, $(id).value); render(); }); });
+  FLAGS.forEach(function(id){ var v = lsGet(id, null); if (v !== null) $(id).checked = v;
+    $(id).addEventListener('change', function(){ lsSet(id, $(id).checked); render(); }); });
+  FORM.forEach(function(id){ $(id).addEventListener('input', function(){ $('sampleTag').hidden = true; render(); }); });
+  if (lsGet('settingsOpen', false)) $('settingsBox').open = true;
+  $('settingsBox').addEventListener('toggle', function(){ lsSet('settingsOpen', $('settingsBox').open); });
+
+  $('saveBtn').addEventListener('click', saveCar);
+  $('clearBtn').addEventListener('click', function(){
+    $('c_name').value = ''; $('c_year').value = ''; $('c_km').value = '';
+    $('c_price').value = ''; $('c_ship').value = '0'; $('c_hp').value = '';
+    $('c_cons').value = ''; $('c_clear').value = '';
+    $('sampleTag').hidden = true; render(); $('c_name').focus();
+  });
+  $('resetBtn').addEventListener('click', function(){
+    cars = seedCars(); persist(); renderSaved();
+  });
+  $('exportBtn').addEventListener('click', function(){
+    var blob = new Blob([JSON.stringify(cars, null, 2)], {type:'application/json'});
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'мои-машины.json';
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  });
+  $('importBtn').addEventListener('click', function(){ $('importFile').click(); });
+  $('importFile').addEventListener('change', function(e){
+    var f = e.target.files && e.target.files[0];
+    if (!f) return;
+    var fr = new FileReader();
+    fr.onload = function(){
+      try {
+        var data = JSON.parse(fr.result);
+        if (Array.isArray(data)){ cars = data; persist(); renderSaved(); }
+      } catch(err){ $('storeNote').textContent = 'Не удалось прочитать файл: это должен быть JSON, выгруженный этой же страницей.'; }
+    };
+    fr.readAsText(f);
+    e.target.value = '';
+  });
+
+  var stored = lsGet('cars', null);
+  cars = (stored === null) ? seedCars() : stored;
+  if (stored === null) persist();
+  render(); renderSaved();
+})();
+</script>
+</body>
+</html>
