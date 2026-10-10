@@ -51,7 +51,8 @@ h2{font-size:19px;margin-bottom:12px}
 .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
 .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(168px,1fr))}
 label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:500}
-input[type=number],input[type=text],select{width:100%;min-width:0;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface-2);color:var(--fg);font-family:var(--body);font-size:14px}
+input[type=number],input[type=text],input[type=password],select,textarea{width:100%;min-width:0;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface-2);color:var(--fg);font-family:var(--body);font-size:14px}
+textarea{resize:vertical;line-height:1.45}
 input[type=number]{font-family:var(--mono);font-variant-numeric:tabular-nums}
 input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--fg);margin:0;cursor:pointer}
@@ -140,6 +141,23 @@ td.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
         <label class="check"><input type="checkbox" id="f_budget" checked> Платёж выше потолка</label>
       </div>
       <p class="hint">Настройки сохраняются в этом браузере.</p>
+    </div>
+  </details>
+
+  <details class="card" id="aiBox">
+    <summary>Разобрать объявление автоматически</summary>
+    <div style="margin-top:14px">
+      <label for="ai_text">Вставьте текст объявления целиком</label>
+      <textarea id="ai_text" rows="5" placeholder="MAZDA CX-5&#10;2021г, пробег 68 000 км, 2.0 бензин, полный привод, автомат..."></textarea>
+      <div class="grid" style="margin-top:12px">
+        <div><label for="ai_key">API-ключ Рег.облако</label><input type="password" id="ai_key" autocomplete="off" placeholder="вставьте ключ один раз"></div>
+        <div><label for="ai_model">Модель</label><input type="text" id="ai_model" value="deepseek-v4-flash"></div>
+      </div>
+      <div class="row">
+        <button class="primary" id="ai_run">Разобрать и заполнить</button>
+        <span id="ai_status" class="hint" style="margin:0"></span>
+      </div>
+      <p class="hint">Ключ хранится только в этом браузере и никуда больше не отправляется — запрос идёт напрямую на ai.reg.cloud. Разбор одного объявления стоит доли копейки. Модель заполняет только то, что прямо написано в тексте; коробку и привод всё равно проверьте по справочнику.</p>
     </div>
   </details>
 
@@ -540,6 +558,94 @@ td.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
     $('sampleTag').hidden = true;
     render();
   }
+
+  // --- разбор объявления через API Рег.облако (OpenAI-совместимый) ---
+  var AI_PROMPT = 'Ты разбираешь объявление о продаже автомобиля. Верни ТОЛЬКО JSON-объект, без пояснений и без markdown-обёртки.\n' +
+    'Поля (если данных в тексте нет — ставь null, не выдумывай):\n' +
+    'name — строка: марка, модель, модификация\n' +
+    'year — число, год выпуска\n' +
+    'km — число, пробег в километрах\n' +
+    'price — число, цена в рублях\n' +
+    'hp — число, мощность в л.с.\n' +
+    'cons — число, расход л/100 км, только если указан\n' +
+    'clear — число, клиренс в мм, только если указан\n' +
+    'engine — одно из: atmo (атмосферный бензин), turbo (бензин с турбиной), diesel, hev (полный гибрид Toyota, Lexus, Honda e:HEV), hevdct (гибрид Kia, Hyundai), mhev (мягкий гибрид 48V), phev (плагин-гибрид или электро)\n' +
+    'gear — одно из: at (классический автомат), ecvt (планетарный e-CVT гибрида), cvt (вариатор), dct (робот DSG, DCT), mt (механика)\n' +
+    'drive — awd (полный) или fwd (передний)\n' +
+    'hand — lhd (левый руль) или rhd (правый руль)\n' +
+    'wheels — big если диски R19 и больше, иначе small\n' +
+    'where — ru (машина в России), jp, kr, cn, eu (ввоз из Японии, Кореи, Китая, Европы или Грузии)\n' +
+    'grade — оценка японского аукциона строкой ("4", "4.5", "R", "S") или null\n' +
+    'winter — yes если упомянут подогрев руля или обогрев лобового, иначе unknown\n' +
+    'sunroof — yes если упомянут люк или панорама, иначе no\n' +
+    'Подсказки: TSI, TFSI, T-GDI, VTEC Turbo, буква T после объёма — это turbo. ' +
+    'Оценка по японской шкале означает японский аукцион: where=jp, hand=rhd. ' +
+    'Если коробка не названа прямо — ставь null, не угадывай.\n\nТекст объявления:\n';
+
+  function aiSay(msg){ $('ai_status').textContent = msg; }
+
+  $('ai_run').addEventListener('click', function(){
+    var key = $('ai_key').value.trim(), text = $('ai_text').value.trim();
+    if (!key){ aiSay('Нужен API-ключ.'); return; }
+    if (!text){ aiSay('Вставьте текст объявления.'); return; }
+    lsSet('ai_key', key); lsSet('ai_model', $('ai_model').value);
+    aiSay('Разбираю…');
+    $('ai_run').disabled = true;
+    fetch('https://ai.reg.cloud/v1/chat/completions', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer ' + key},
+      body: JSON.stringify({
+        model: $('ai_model').value.trim() || 'deepseek-v4-flash',
+        temperature: 0,
+        max_tokens: 700,
+        messages:[{role:'user', content: AI_PROMPT + text}]
+      })
+    }).then(function(r){
+      if (!r.ok) return r.text().then(function(t){ throw new Error('HTTP ' + r.status + ': ' + t.slice(0,200)); });
+      return r.json();
+    }).then(function(d){
+      var raw = d && d.choices && d.choices[0] && d.choices[0].message && d.choices[0].message.content || '';
+      var m = raw.match(/\{[\s\S]*\}/);
+      if (!m) throw new Error('Модель вернула не JSON');
+      applyParsed(JSON.parse(m[0]));
+    }).catch(function(e){
+      aiSay('Не получилось: ' + e.message);
+    }).then(function(){ $('ai_run').disabled = false; });
+  });
+
+  function applyParsed(p){
+    var map = {name:'c_name', year:'c_year', km:'c_km', price:'c_price', hp:'c_hp',
+               cons:'c_cons', clear:'c_clear', engine:'c_engine', gear:'c_gear',
+               drive:'c_drive', hand:'c_hand', wheels:'c_wheels', where:'c_where',
+               winter:'c_winter', sunroof:'c_sunroof'};
+    var filled = [], missing = [];
+    Object.keys(map).forEach(function(k){
+      var v = p[k];
+      if (v === null || v === undefined || v === '') { missing.push(k); return; }
+      var el = $(map[k]);
+      if (el.tagName === 'SELECT'){
+        var ok = Array.prototype.some.call(el.options, function(o){ return o.value === String(v); });
+        if (!ok) { missing.push(k); return; }
+      }
+      el.value = v; filled.push(k);
+    });
+    if (p.grade !== null && p.grade !== undefined){
+      var g = $('c_grade');
+      if (Array.prototype.some.call(g.options, function(o){ return o.value === String(p.grade); })) g.value = p.grade;
+    }
+    currentIssues = '';
+    $('sampleTag').hidden = true;
+    render();
+    var names = {gear:'коробка', drive:'привод', engine:'двигатель', hand:'руль', clear:'клиренс', cons:'расход', hp:'мощность', km:'пробег', price:'цена', year:'год'};
+    var left = missing.filter(function(k){ return names[k]; }).map(function(k){ return names[k]; });
+    aiSay('Заполнено полей: ' + filled.length + (left.length ? '. Не нашлось в тексте: ' + left.join(', ') + ' — проверьте по справочнику.' : '.'));
+  }
+
+  (function restoreAi(){
+    var k = lsGet('ai_key', ''), m = lsGet('ai_model', '');
+    if (k) { $('ai_key').value = k; $('aiBox').open = true; }
+    if (m) $('ai_model').value = m;
+  })();
 
   $('saveBtn').addEventListener('click', saveCar);
   $('clearBtn').addEventListener('click', function(){
